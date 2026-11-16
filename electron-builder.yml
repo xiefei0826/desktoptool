@@ -1,0 +1,40 @@
+appId: com.local.desktoptool
+productName: DesktopTool
+copyright: Copyright © 2026
+directories:
+  buildResources: build
+  output: release
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!scripts/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,README.md,.gitignore}'
+asarUnpack:
+  - '**/*.node'
+win:
+  executableName: DesktopTool
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  shortcutName: DesktopTool
+mac:
+  target:
+    - dmg
+  category: public.app-category.utilities
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+  maintainer: local
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

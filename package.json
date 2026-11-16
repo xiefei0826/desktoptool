@@ -1,0 +1,59 @@
+{
+  "name": "desktop-tool",
+  "version": "0.1.0",
+  "description": "Cross-platform SSH & remote desktop toolbox",
+  "main": "./out/main/index.js",
+  "author": "local",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "rebuild": "electron-builder install-app-deps",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "npm run typecheck && electron-vite build",
+    "build:win": "npm run build && electron-builder --win --config electron-builder.yml",
+    "build:linux": "npm run build && electron-builder --linux --config electron-builder.yml",
+    "build:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
+    "mock:ssh": "node scripts/mock-ssh-server.mjs"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^0.22.3",
+    "js-yaml": "^4.3.2",
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@novnc/novnc": "^1.4.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.1",
+    "@types/ssh2": "^1.15.1",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "pinia": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.1.10"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true,
+    "node-pty@1.1.0": true,
+    "ssh2@1.17.0": true,
+    "vue-demi@0.14.10": true
+  }
+}
