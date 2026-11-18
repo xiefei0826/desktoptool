@@ -109,6 +109,7 @@ npm run build:mac      # dmg（必须在 macOS 上执行）
 macOS 产物无法在 Windows 上构建，需要 macOS 机器或 GitHub Actions 的 `macos-latest` runner。
 
 完整的开发 / 自检 / 打包命令、镜像设置、CI 示例与常见问题见 **[docs/build.md](docs/build.md)**。
+从零复刻本软件所需的完整设计（数据模型 / IPC 契约 / 核心机制 / 复刻步骤 / 已知坑）见 **[docs/DESIGN.md](docs/DESIGN.md)**。
 
 ## 数据目录
 
