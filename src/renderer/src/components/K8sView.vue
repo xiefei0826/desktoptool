@@ -48,6 +48,7 @@ const yamlLoading = ref(false)
 const picker = ref<{ pod: K8sObjectSummary; containers: string[]; mode: 'log' | 'exec' } | null>(null)
 
 const expandedCategories = ref<Set<K8sCategory>>(loadExpandedCategories())
+const detailExpanded = ref(false)
 const editing = ref(false)
 const editText = ref('')
 const saving = ref(false)
@@ -358,6 +359,20 @@ function closeDetail(): void {
   yamlText.value = ''
   editing.value = false
   editText.value = ''
+  detailExpanded.value = false
+}
+
+function toggleDetailExpand(): void {
+  detailExpanded.value = !detailExpanded.value
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  if (editing.value) {
+    cancelEdit()
+    return
+  }
+  if (detailExpanded.value) detailExpanded.value = false
 }
 
 async function copyName(row: K8sObjectSummary): Promise<void> {
@@ -430,9 +445,13 @@ function shortNames(type: K8sResourceType): string {
   return type.shortNames.slice(0, 2).join(',')
 }
 
-onMounted(init)
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  void init()
+})
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
   void stopWatch()
 })
 </script>
@@ -575,9 +594,17 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <aside v-if="selected" class="detail">
-        <div class="detail-head">
+      <aside v-if="selected" class="detail" :class="{ expanded: detailExpanded }">
+        <div class="detail-head" @dblclick="toggleDetailExpand">
           <span class="detail-title">{{ selected.name }}</span>
+          <span class="detail-meta">{{ selected.kind }}<template v-if="selected.namespace"> · {{ selected.namespace }}</template></span>
+          <button
+            class="icon-btn tiny"
+            :title="detailExpanded ? '还原为侧栏（Esc）' : '放大到整个内容区（双击标题栏）'"
+            @click="toggleDetailExpand"
+          >
+            <Icon :name="detailExpanded ? 'close' : 'fullscreen'" :size="12" />
+          </button>
           <template v-if="!editing">
             <button class="icon-btn tiny" title="编辑 YAML" @click="startEdit">
               <Icon name="edit" :size="12" />
@@ -697,6 +724,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
 }
 
 .types {
@@ -931,12 +959,38 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.detail.expanded {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  z-index: 30;
+  border-left: none;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.detail.expanded .yaml,
+.detail.expanded .edit-area {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
 .detail-head {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border-soft);
+  user-select: none;
+}
+
+.detail-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 15px;
+  white-space: nowrap;
 }
 
 .detail-title {
