@@ -92,7 +92,11 @@ async function submit(): Promise<void> {
 
   saving.value = true
   try {
-    const saved = await store.saveSession({ ...form, groupId: form.groupId || null })
+    // JSON 往返一次，避免把 Vue 响应式 Proxy 传进 IPC
+    const payload = JSON.parse(
+      JSON.stringify({ ...form, groupId: form.groupId || null })
+    ) as SessionInput
+    const saved = await store.saveSession(payload)
     if (password.value) {
       await window.api.credential.set(`session:${saved.id}:password`, password.value)
     }

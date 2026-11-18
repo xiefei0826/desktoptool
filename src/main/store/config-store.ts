@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type {
   AppConfig,
   AppSettings,
+  DbConnection,
   ForwardRule,
   GroupConfig,
   K8sCluster,
@@ -57,6 +58,24 @@ function normalizeCluster(raw: Partial<K8sCluster>): K8sCluster {
   }
 }
 
+function normalizeDbConnection(raw: Partial<DbConnection>): DbConnection {
+  const now = Date.now()
+  const kind = raw.kind === 'postgres' ? 'postgres' : 'mysql'
+  return {
+    id: raw.id ?? randomUUID(),
+    name: raw.name?.trim() || `${kind} ${raw.host ?? ''}`,
+    kind,
+    host: raw.host ?? '127.0.0.1',
+    port: raw.port ?? (kind === 'postgres' ? 5432 : 3306),
+    username: raw.username ?? '',
+    database: raw.database ?? '',
+    ssl: raw.ssl ?? false,
+    tunnelSessionId: raw.tunnelSessionId ?? null,
+    createdAt: raw.createdAt ?? now,
+    lastUsedAt: raw.lastUsedAt ?? null
+  }
+}
+
 export class ConfigStore {
   private data: AppConfig
   private writeChain: Promise<void> = Promise.resolve()
@@ -94,7 +113,8 @@ export class ConfigStore {
           autoStart: f.autoStart ?? false
         })),
         settings: { ...defaultSettings(), ...(parsed.settings ?? {}) },
-        k8sClusters: (parsed.k8sClusters ?? []).map((cluster) => normalizeCluster(cluster))
+        k8sClusters: (parsed.k8sClusters ?? []).map((cluster) => normalizeCluster(cluster)),
+        dbConnections: (parsed.dbConnections ?? []).map((connection) => normalizeDbConnection(connection))
       }
     } catch {
       data = emptyConfig()
@@ -246,7 +266,8 @@ export class ConfigStore {
       sessions: (input.sessions ?? []).map((s) => normalizeSession(s)),
       forwards: input.forwards ?? [],
       settings: { ...defaultSettings(), ...(input.settings ?? {}) },
-      k8sClusters: (input.k8sClusters ?? []).map((cluster) => normalizeCluster(cluster))
+      k8sClusters: (input.k8sClusters ?? []).map((cluster) => normalizeCluster(cluster)),
+      dbConnections: (input.dbConnections ?? []).map((connection) => normalizeDbConnection(connection))
     }
     await this.persist()
   }
@@ -287,6 +308,45 @@ export class ConfigStore {
     const cluster = this.getCluster(id)
     if (!cluster) return
     cluster.lastUsedAt = Date.now()
+    await this.persist()
+  }
+
+  getDbConnections(): DbConnection[] {
+    return this.data.dbConnections.map((connection) => ({ ...connection }))
+  }
+
+  getDbConnection(id: string): DbConnection | undefined {
+    return this.data.dbConnections.find((connection) => connection.id === id)
+  }
+
+  async saveDbConnection(input: Partial<DbConnection>): Promise<DbConnection> {
+    const existing = input.id ? this.getDbConnection(input.id) : undefined
+    const merged = normalizeDbConnection({
+      ...existing,
+      ...input,
+      id: existing?.id ?? input.id ?? randomUUID(),
+      createdAt: existing?.createdAt ?? Date.now()
+    })
+
+    if (existing) {
+      const index = this.data.dbConnections.findIndex((connection) => connection.id === existing.id)
+      this.data.dbConnections[index] = merged
+    } else {
+      this.data.dbConnections.push(merged)
+    }
+    await this.persist()
+    return { ...merged }
+  }
+
+  async deleteDbConnection(id: string): Promise<void> {
+    this.data.dbConnections = this.data.dbConnections.filter((connection) => connection.id !== id)
+    await this.persist()
+  }
+
+  async touchDbConnection(id: string): Promise<void> {
+    const connection = this.getDbConnection(id)
+    if (!connection) return
+    connection.lastUsedAt = Date.now()
     await this.persist()
   }
 

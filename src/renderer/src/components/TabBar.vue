@@ -25,6 +25,7 @@ function iconOf(tab: Tab): string {
   if (tab.kind === 'sftp') return 'folder'
   if (tab.kind === 'vnc') return 'monitor'
   if (tab.kind === 'k8s') return 'globe'
+  if (tab.kind === 'db') return 'database'
   return 'link'
 }
 

@@ -14,6 +14,7 @@ import { RemoteDesktopService } from './remote-desktop'
 import { VncService } from './vnc/service'
 import { LocalTerminalService } from './pty/local-terminal'
 import { K8sService } from './k8s/service'
+import { DbService } from './db/service'
 
 export class AppServices {
   readonly channels = new ChannelRegistry()
@@ -32,6 +33,7 @@ export class AppServices {
   vnc!: VncService
   pty!: LocalTerminalService
   k8s!: K8sService
+  db!: DbService
 
   private initialized = false
 
@@ -65,6 +67,7 @@ export class AppServices {
       this.channels,
       (event) => this.send('k8s:watch', event)
     )
+    this.db = new DbService(this.config, this.credentials, this.tunnels)
 
     this.initialized = true
   }
@@ -83,6 +86,11 @@ export class AppServices {
     }
     try {
       await this.k8s.dispose()
+    } catch {
+      /* ignore */
+    }
+    try {
+      await this.db.dispose()
     } catch {
       /* ignore */
     }

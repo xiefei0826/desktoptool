@@ -9,13 +9,15 @@ import SftpView from './components/SftpView.vue'
 import VncView from './components/VncView.vue'
 import ForwardsView from './components/ForwardsView.vue'
 import K8sView from './components/K8sView.vue'
+import DbView from './components/DbView.vue'
 import WelcomeView from './components/WelcomeView.vue'
 import StatusBar from './components/StatusBar.vue'
 import SessionDialog from './components/SessionDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import ClusterDialog from './components/ClusterDialog.vue'
+import DbConnectionDialog from './components/DbConnectionDialog.vue'
 import CredentialPrompt from './components/CredentialPrompt.vue'
-import type { K8sCluster } from '@shared/types'
+import type { DbConnection, K8sCluster } from '@shared/types'
 
 interface Toast {
   id: number
@@ -32,6 +34,7 @@ const editingSessionId = ref('')
 const presetGroupId = ref<string | null>(null)
 const settingsDialog = ref(false)
 const clusterDialog = ref(false)
+const dbDialog = ref(false)
 const toasts = ref<Toast[]>([])
 
 let toastSeq = 0
@@ -94,6 +97,11 @@ function onClusterImported(cluster: K8sCluster): void {
   notify('success', `已导入集群 ${cluster.name}`)
   store.openK8sTab(cluster.id)
 }
+
+function onDbSaved(connection: DbConnection): void {
+  notify('success', `已保存数据库连接 ${connection.name}`)
+  store.openDbTab(connection.id)
+}
 </script>
 
 <template>
@@ -112,6 +120,7 @@ function onClusterImported(cluster: K8sCluster): void {
         @edit-session="openEditSession"
         @settings="settingsDialog = true"
         @add-cluster="clusterDialog = true"
+        @add-db="dbDialog = true"
         @notice="notify"
       />
 
@@ -152,6 +161,12 @@ function onClusterImported(cluster: K8sCluster): void {
                 :cluster-id="tab.clusterId ?? ''"
                 @notice="notify"
               />
+              <DbView
+                v-else-if="tab.kind === 'db'"
+                :key="`${tab.id}:${tab.dbConnectionId}`"
+                :connection-id="tab.dbConnectionId ?? ''"
+                @notice="notify"
+              />
               <ForwardsView v-else @notice="notify" />
             </div>
           </template>
@@ -169,6 +184,7 @@ function onClusterImported(cluster: K8sCluster): void {
     />
     <SettingsDialog v-model:show="settingsDialog" @notice="notify" />
     <ClusterDialog v-model:show="clusterDialog" @imported="onClusterImported" />
+    <DbConnectionDialog v-model:show="dbDialog" @saved="onDbSaved" />
     <CredentialPrompt />
 
     <div class="toast-stack">

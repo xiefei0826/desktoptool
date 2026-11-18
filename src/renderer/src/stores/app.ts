@@ -15,13 +15,13 @@ import type {
   SftpProgress,
   SshStatusEvent
 } from '@shared/types'
-import type { K8sCluster } from '@shared/types'
+import type { DbConnection, K8sCluster } from '@shared/types'
 import { errorMessage } from '../lib/errors'
 import { dispatchK8sWatch } from '../lib/k8s-watch'
 
 export interface Tab {
   id: string
-  kind: 'terminal' | 'sftp' | 'vnc' | 'forwards' | 'k8s'
+  kind: 'terminal' | 'sftp' | 'vnc' | 'forwards' | 'k8s' | 'db'
   title: string
   /** 同源标签共用的分组键，用于标签标题自动编号（同一连接多开时显示 (2)(3)） */
   groupKey: string
@@ -31,6 +31,7 @@ export interface Tab {
   channelId?: string
   readOnly?: boolean
   clusterId?: string
+  dbConnectionId?: string
 }
 
 export interface AuthPromptState {
@@ -62,7 +63,8 @@ export const useAppStore = defineStore('app', {
     sftpProgress: [] as SftpProgress[],
     authPrompt: null as AuthPromptState | null,
     busySessions: {} as Record<string, boolean>,
-    clusters: [] as K8sCluster[]
+    clusters: [] as K8sCluster[],
+    dbConnections: [] as DbConnection[]
   }),
 
   getters: {
@@ -88,6 +90,7 @@ export const useAppStore = defineStore('app', {
       this.rdClients = await window.api.rd.detect()
       await this.refreshForwards()
       await this.reloadClusters()
+      await this.reloadDbConnections()
 
       window.api.events.onSshStatus((event: SshStatusEvent) => {
         this.sshStatus = {
@@ -119,6 +122,7 @@ export const useAppStore = defineStore('app', {
         void this.reloadConfig()
         void this.refreshForwards()
         void this.reloadClusters()
+        void this.reloadDbConnections()
       })
 
       window.api.events.onK8sWatch((event) => dispatchK8sWatch(event))
@@ -126,6 +130,29 @@ export const useAppStore = defineStore('app', {
 
     async reloadClusters(): Promise<void> {
       this.clusters = await window.api.k8s.listClusters()
+    },
+
+    async reloadDbConnections(): Promise<void> {
+      this.dbConnections = await window.api.db.listConnections()
+    },
+
+    openDbTab(connectionId: string): void {
+      const connection = this.dbConnections.find((item) => item.id === connectionId)
+      this.openTab({
+        id: makeTabId('db'),
+        kind: 'db',
+        title: connection?.name ?? '数据库',
+        groupKey: `db:${connectionId}`,
+        dbConnectionId: connectionId
+      })
+    },
+
+    async removeDbConnection(connectionId: string): Promise<void> {
+      for (const tab of [...this.tabs]) {
+        if (tab.dbConnectionId === connectionId) this.closeTab(tab.id)
+      }
+      await window.api.db.deleteConnection(connectionId)
+      await this.reloadDbConnections()
     },
 
     async reloadConfig(): Promise<void> {

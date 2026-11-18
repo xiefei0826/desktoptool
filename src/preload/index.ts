@@ -204,6 +204,21 @@ const api: Api = {
     openLog: (request) => invoke('k8s:openLog', request),
     openExec: (request) => invoke('k8s:openExec', request)
   },
+  db: {
+    listConnections: () => invoke('db:listConnections'),
+    saveConnection: (input) => invoke('db:saveConnection', input),
+    deleteConnection: (id) => invoke('db:deleteConnection', id),
+    testConnection: (connection, password) => invoke('db:testConnection', connection, password),
+    connect: (id) => invoke('db:connect', id),
+    disconnect: (id) => invoke('db:disconnect', id),
+    cancel: (id) => invoke('db:cancel', id),
+    metadata: (id) => invoke('db:metadata', id),
+    listDatabases: (id) => invoke('db:listDatabases', id),
+    switchDatabase: (id, database) => invoke('db:switchDatabase', id, database),
+    transaction: (id, action) => invoke('db:transaction', id, action),
+    query: (request) => invoke('db:query', request),
+    parse: (kind, sql) => invoke('db:parse', kind, sql)
+  },
   clipboard: {
     read: () => invoke('clipboard:read'),
     write: (text) => invoke('clipboard:write', text)

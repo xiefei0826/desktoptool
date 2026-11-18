@@ -136,6 +136,20 @@ node_modules/electron/dist/electron.exe . --smoke-k8s-write
 
 只在 `default` 命名空间创建 `desktop-tool-smoke` 这个 ConfigMap，验证完立即删除。
 
+### 4.6 数据库自检（不需要真实数据库）
+
+```bash
+node_modules/electron/dist/electron.exe . --smoke-db
+```
+
+预期输出：
+
+```
+[smoke-db] PASS ["db-parse ok (2 stmts, types=SELECT/UPDATE, tables=users, error=none)","db-parse-error ok (true)","db-split ok (true)","db-split-dollar-quote ok (true)","db-parse-postgres ok (true)","db-connect-error ok (true)"]
+```
+
+覆盖：语句拆分、MySQL/PostgreSQL 解析、语法错误识别、连接失败提示。连接真实库请用应用界面里的「测试连接」。
+
 ## 5. 打包
 
 打包前先 `npm run build`，或直接用带构建的组合命令。

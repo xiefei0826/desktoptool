@@ -125,5 +125,6 @@ export class CredentialStore {
 export const credentialRef = {
   password: (sessionId: string): string => `session:${sessionId}:password`,
   passphrase: (sessionId: string): string => `session:${sessionId}:passphrase`,
-  kubeconfig: (clusterId: string): string => `k8s:${clusterId}:kubeconfig`
+  kubeconfig: (clusterId: string): string => `k8s:${clusterId}:kubeconfig`,
+  dbPassword: (connectionId: string): string => `db:${connectionId}:password`
 }

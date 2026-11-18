@@ -1,8 +1,11 @@
 import { app, BrowserWindow, Menu } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
+import { writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { AppServices } from './services'
 import { registerIpc } from './ipc'
-import { runK8sSmoke, runK8sWriteSmoke, runSshSmoke } from './smoke'
+import { runDbSmoke, runK8sSmoke, runK8sWriteSmoke, runSshSmoke } from './smoke'
 import { allWindows, createWindow, focusFirstWindow } from './window-manager'
 
 let services: AppServices | null = null
@@ -57,9 +60,24 @@ function runWindowSmokeTest(window: BrowserWindow): void {
             url: location.href
           }
         })()`)
-        console.log('[smoke]', JSON.stringify(result))
+        const payload = JSON.stringify(result)
+        console.log('[smoke]', payload)
+        try {
+          writeFileSync(path.join(os.tmpdir(), 'desktop-tool-smoke.json'), payload, 'utf8')
+        } catch {
+          /* ignore */
+        }
       } catch (error) {
         console.error('[smoke] failed:', error)
+        try {
+          writeFileSync(
+            path.join(os.tmpdir(), 'desktop-tool-smoke.json'),
+            JSON.stringify({ error: String(error) }),
+            'utf8'
+          )
+        } catch {
+          /* ignore */
+        }
       }
       app.exit(0)
     }, 2500)
@@ -77,6 +95,25 @@ async function bootstrap(): Promise<void> {
 
   await services.init()
   registerIpc(services)
+
+  // 数据库自检不依赖渲染进程，直接跑，避免窗口加载时序影响
+  if (process.argv.includes('--smoke-db')) {
+    const outputPath = path.join(os.tmpdir(), 'desktop-tool-smoke-db.json')
+    try {
+      const logs = await runDbSmoke(services)
+      console.log('[smoke-db] PASS', JSON.stringify(logs))
+      writeFileSync(outputPath, JSON.stringify(logs), 'utf8')
+    } catch (error) {
+      console.error('[smoke-db] FAIL', error)
+      writeFileSync(
+        outputPath,
+        JSON.stringify({ error: String(error), stack: (error as Error)?.stack ?? '' }),
+        'utf8'
+      )
+    }
+    app.exit(0)
+    return
+  }
 
   const mainWindow = createWindow()
 

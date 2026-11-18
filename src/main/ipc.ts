@@ -3,6 +3,9 @@ import { existsSync, promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type {
+  DbConnection,
+  DbKind,
+  DbQueryRequest,
   K8sExecRequest,
   K8sListQuery,
   K8sObjectRef,
@@ -26,6 +29,7 @@ import type {
 } from '../shared/api'
 import type { AppServices } from './services'
 import { createWindow } from './window-manager'
+import { credentialRef } from './store/credential-store'
 
 export function registerIpc(services: AppServices): void {
   const { config, credentials } = services
@@ -357,6 +361,54 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle('k8s:openExec', (_event, request: K8sExecRequest) =>
     services.k8s.openPodExec(request)
   )
+
+  ipcMain.handle('db:listConnections', () => services.db.listConnections())
+
+  ipcMain.handle(
+    'db:saveConnection',
+    async (_event, input: Partial<DbConnection> & { password?: string }) => {
+      const { password, ...rest } = input
+      const saved = await config.saveDbConnection(rest)
+      if (password) await credentials.set(credentialRef.dbPassword(saved.id), password)
+      services.notifyConfigChanged()
+      return saved
+    }
+  )
+
+  ipcMain.handle('db:deleteConnection', async (_event, id: string) => {
+    await services.db.disconnect(id)
+    await credentials.remove(credentialRef.dbPassword(id))
+    await config.deleteDbConnection(id)
+    services.notifyConfigChanged()
+  })
+
+  ipcMain.handle('db:testConnection', (_event, connection: DbConnection, password: string) =>
+    services.db.testConnection(connection, password)
+  )
+
+  ipcMain.handle('db:connect', (_event, id: string) => services.db.connect(id))
+
+  ipcMain.handle('db:disconnect', (_event, id: string) => services.db.disconnect(id))
+
+  ipcMain.handle('db:cancel', (_event, id: string) => services.db.cancel(id))
+
+  ipcMain.handle('db:metadata', (_event, id: string) => services.db.metadata(id))
+
+  ipcMain.handle('db:listDatabases', (_event, id: string) => services.db.listDatabases(id))
+
+  ipcMain.handle('db:switchDatabase', (_event, id: string, database: string) =>
+    services.db.switchDatabase(id, database)
+  )
+
+  ipcMain.handle(
+    'db:transaction',
+    (_event, id: string, action: 'begin' | 'commit' | 'rollback') =>
+      services.db.transaction(id, action)
+  )
+
+  ipcMain.handle('db:query', (_event, request: DbQueryRequest) => services.db.query(request))
+
+  ipcMain.handle('db:parse', (_event, kind: DbKind, sql: string) => services.db.parse(kind, sql))
 
   ipcMain.handle('clipboard:read', () => clipboard.readText())
 

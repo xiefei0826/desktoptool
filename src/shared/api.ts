@@ -5,6 +5,13 @@ import type {
   BridgeEndpoint,
   ChannelClosedEvent,
   CredentialStatus,
+  DbConnectResult,
+  DbConnection,
+  DbKind,
+  DbMetadata,
+  DbParseResult,
+  DbQueryRequest,
+  DbQueryResponse,
   ForwardRule,
   ForwardState,
   GroupConfig,
@@ -159,6 +166,21 @@ export interface Api {
   }
   vnc: {
     open(sessionId: string): Promise<BridgeEndpoint>
+  }
+  db: {
+    listConnections(): Promise<DbConnection[]>
+    saveConnection(input: Partial<DbConnection> & { password?: string }): Promise<DbConnection>
+    deleteConnection(id: string): Promise<void>
+    testConnection(connection: DbConnection, password: string): Promise<DbConnectResult>
+    connect(id: string): Promise<DbConnectResult>
+    disconnect(id: string): Promise<void>
+    cancel(id: string): Promise<void>
+    metadata(id: string): Promise<DbMetadata>
+    listDatabases(id: string): Promise<string[]>
+    switchDatabase(id: string, database: string): Promise<DbMetadata>
+    transaction(id: string, action: 'begin' | 'commit' | 'rollback'): Promise<boolean>
+    query(request: DbQueryRequest): Promise<DbQueryResponse>
+    parse(kind: DbKind, sql: string): Promise<DbParseResult>
   }
   clipboard: {
     read(): Promise<string>

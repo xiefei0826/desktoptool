@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { K8sCluster, SessionConfig } from '@shared/types'
+import type { DbConnection, K8sCluster, SessionConfig } from '@shared/types'
 import { useAppStore } from '../stores/app'
 import { errorMessage } from '../lib/errors'
 import Icon from './Icon.vue'
@@ -10,6 +10,7 @@ const emit = defineEmits<{
   (event: 'edit-session', sessionId: string): void
   (event: 'settings'): void
   (event: 'add-cluster'): void
+  (event: 'add-db'): void
   (event: 'notice', kind: 'success' | 'error', text: string): void
 }>()
 
@@ -219,6 +220,16 @@ async function removeCluster(cluster: K8sCluster): Promise<void> {
   }
 }
 
+async function removeDbConnection(connection: DbConnection): Promise<void> {
+  if (!window.confirm(`移除数据库连接「${connection.name}」？`)) return
+  try {
+    await store.removeDbConnection(connection.id)
+    emit('notice', 'success', '已移除数据库连接')
+  } catch (error) {
+    emit('notice', 'error', errorMessage(error))
+  }
+}
+
 function onDocumentClick(): void {
   closeMenu()
 }
@@ -342,6 +353,28 @@ function protocolLabel(session: SessionConfig): string {
         </button>
       </div>
       <div v-if="store.clusters.length === 0" class="k8s-empty">尚未添加集群</div>
+    </div>
+
+    <div class="k8s-block">
+      <div class="tree-head">
+        <span>数据库</span>
+        <button class="icon-btn" title="添加数据库连接" @click="emit('add-db')">
+          <Icon name="plus" :size="13" />
+        </button>
+      </div>
+      <div
+        v-for="connection in store.dbConnections"
+        :key="connection.id"
+        class="k8s-row"
+        @click="store.openDbTab(connection.id)"
+      >
+        <Icon name="database" :size="12" />
+        <span class="label">{{ connection.name }}</span>
+        <button class="row-action" title="移除" @click.stop="removeDbConnection(connection)">
+          <Icon name="trash" :size="11" />
+        </button>
+      </div>
+      <div v-if="store.dbConnections.length === 0" class="k8s-empty">尚未添加数据库</div>
     </div>
 
     <div class="foot">

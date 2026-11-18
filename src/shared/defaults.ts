@@ -15,6 +15,18 @@ export function defaultRdpOptions(): RdpOptions {
   }
 }
 
+/** 系统库 / 系统 schema，界面上排在后面并做弱化显示 */
+export const SYSTEM_DATABASES = [
+  'information_schema',
+  'mysql',
+  'performance_schema',
+  'sys',
+  'pg_catalog',
+  'pg_toast',
+  'pg_temp_1',
+  'pg_toast_temp_1'
+]
+
 export function defaultSettings(): AppSettings {
   return {
     theme: 'dark',
@@ -50,6 +62,7 @@ export function emptyConfig(): AppConfig {
     sessions: [],
     forwards: [],
     settings: defaultSettings(),
-    k8sClusters: []
+    k8sClusters: [],
+    dbConnections: []
   }
 }

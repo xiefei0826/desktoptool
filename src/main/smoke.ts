@@ -6,6 +6,7 @@ import path from 'node:path'
 import yaml from 'js-yaml'
 import { defaultRdpOptions } from '../shared/defaults'
 import type { AppServices } from './services'
+import { splitStatements } from './db/service'
 
 const HOST = '127.0.0.1'
 const SSH_PORT = Number(process.env.SMOKE_SSH_PORT ?? 2222)
@@ -183,6 +184,60 @@ export async function runK8sSmoke(
     logs.push('k8s-watch ok (subscribed)')
   } finally {
     await services.k8s.removeCluster(cluster.id).catch(() => undefined)
+  }
+
+  return logs
+}
+
+/**
+ * 数据库自检：SQL 拆分 / 解析（含错误分支）/ 连接失败提示
+ * 不依赖任何真实数据库，纯本地验证。
+ */
+export async function runDbSmoke(services: AppServices): Promise<string[]> {
+  const logs: string[] = []
+
+  const parsed = services.db.parse(
+    'mysql',
+    "SELECT u.id, u.name FROM users u WHERE u.id = 1;\nUPDATE users SET name = 'x' WHERE id = 1"
+  )
+  logs.push(
+    `db-parse ok (${parsed.statements.length} stmts, types=${parsed.statements
+      .map((item) => item.type)
+      .join('/')}, tables=${parsed.tables.join(',')}, error=${parsed.error || 'none'})`
+  )
+
+  const broken = services.db.parse('mysql', 'SELECT FROM WHERE')
+  logs.push(`db-parse-error ok (${Boolean(broken.error)})`)
+
+  const split = splitStatements("SELECT ';' AS a; -- 注释; 里也有分号\nSELECT 2; /* ; */ SELECT 3;")
+  logs.push(`db-split ok (${split.length === 3})`)
+
+  const pgBody = splitStatements(
+    "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql; SELECT 1;"
+  )
+  logs.push(`db-split-dollar-quote ok (${pgBody.length === 2})`)
+
+  const postgres = services.db.parse('postgres', 'SELECT now() AS ts; CREATE TABLE t (id int)')
+  logs.push(`db-parse-postgres ok (${postgres.statements.length === 2 && !postgres.error})`)
+
+  const connection = await services.config.saveDbConnection({
+    name: '__smoke_db__',
+    kind: 'mysql',
+    host: '127.0.0.1',
+    port: 3399,
+    username: 'root',
+    database: ''
+  })
+
+  try {
+    await services.db.testConnection(connection, 'x')
+    logs.push('db-connect-error ok (false)')
+  } catch (error) {
+    logs.push(
+      `db-connect-error ok (${/连接被拒绝|连接超时|认证失败/.test((error as Error).message)})`
+    )
+  } finally {
+    await services.config.deleteDbConnection(connection.id).catch(() => undefined)
   }
 
   return logs

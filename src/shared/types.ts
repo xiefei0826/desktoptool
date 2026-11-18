@@ -186,6 +186,106 @@ export interface K8sClusterInfo {
   tunnelActive: boolean
 }
 
+export type DbKind = 'mysql' | 'postgres'
+
+export interface DbConnection {
+  id: string
+  name: string
+  kind: DbKind
+  host: string
+  port: number
+  username: string
+  database: string
+  ssl: boolean
+  /** 经哪条 SSH 会话建隧道连数据库 */
+  tunnelSessionId: string | null
+  createdAt: number
+  lastUsedAt: number | null
+}
+
+export interface DbColumn {
+  name: string
+  type: string
+  nullable: boolean
+  primaryKey: boolean
+  defaultValue: string
+}
+
+export interface DbIndex {
+  name: string
+  columns: string[]
+  unique: boolean
+  primary: boolean
+  definition: string
+}
+
+export interface DbForeignKey {
+  name: string
+  columns: string[]
+  refSchema: string
+  refTable: string
+  refColumns: string[]
+}
+
+export interface DbTable {
+  schema: string
+  name: string
+  type: 'table' | 'view'
+  columns: DbColumn[]
+  indexes: DbIndex[]
+  foreignKeys: DbForeignKey[]
+}
+
+export interface DbMetadata {
+  database: string
+  groupLabel: 'database' | 'schema'
+  tables: DbTable[]
+  fetchedAt: number
+}
+
+export interface DbQueryRequest {
+  connectionId: string
+  sql: string
+  maxRows?: number
+}
+
+export interface DbResultSet {
+  command: string
+  columns: { name: string; type: string }[]
+  rows: unknown[][]
+  rowCount: number
+  affectedRows: number
+  durationMs: number
+  truncated: boolean
+  notice: string
+}
+
+export interface DbQueryResponse {
+  results: DbResultSet[]
+  error: string
+  errorStatement: number
+}
+
+export interface DbStatementInfo {
+  type: string
+  text: string
+  tables: string[]
+  columns: string[]
+}
+
+export interface DbParseResult {
+  statements: DbStatementInfo[]
+  tables: string[]
+  error: string
+}
+
+export interface DbConnectResult {
+  serverVersion: string
+  database: string
+  metadata: DbMetadata
+  inTransaction: boolean
+}
+
 export interface AppConfig {
   schemaVersion: number
   groups: GroupConfig[]
@@ -193,6 +293,7 @@ export interface AppConfig {
   forwards: ForwardRule[]
   settings: AppSettings
   k8sClusters: K8sCluster[]
+  dbConnections: DbConnection[]
 }
 
 export interface SftpEntry {
