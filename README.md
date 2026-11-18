@@ -36,8 +36,10 @@
 - Pod 能力：多容器选择、**日志流式查看**、**Exec 交互终端**（复用 xterm，走 MessagePort 通道）
 - 集群凭据（kubeconfig 全文）用 `safeStorage` 加密存储，`config.json` 只留元数据
 
-**数据库管理（MySQL / PostgreSQL）**
-- 连接管理：MySQL / MariaDB、PostgreSQL，密码用 `safeStorage` 加密；支持经 **SSH 隧道**访问内网数据库
+**数据库管理（MySQL / PostgreSQL / Redis / MongoDB）**
+- 连接管理：新建连接时可选 **MySQL、PostgreSQL、Redis、MongoDB** 四种类型，端口按类型自动填（3306/5432/6379/27017），密码用 `safeStorage` 加密；都支持经 **SSH 隧道**访问内网
+- Redis：SCAN 模式匹配浏览键（支持「加载更多」分页）、按类型预览值（string/hash/list/set/zset/stream）、TTL 查看与修改、删除键、编辑字符串、切换 db0-15、**任意命令台**（支持带引号参数）
+- MongoDB：库/集合树（带文档数）、JSON `filter` / `sort` / `limit` 查询、结果 JSON 展示、匹配数与耗时
 - 结构树（对齐 DataGrip）：库 / Schema → 表 / 视图 → **列 / 键 / 索引** 三层可折叠。列显示类型并标记主键；键里列出主键与全部外键（含引用目标表/列）；索引显示唯一性与列组合
 - 右键菜单：表上支持「新建查询、生成 CREATE 模板、复制限定名、重命名、清空表、删除表、刷新」；列上支持「插入列名、复制列名」；库上支持「新建查询、复制库名、设为当前数据库」。**新建查询 / 生成 CREATE 模板 / 双击表都会新开一个查询页**，不会覆盖当前 SQL
 - 建连接时**数据库留空则列出全部库**（业务库在前、系统库弱化显示），SQL 自动带库名前缀

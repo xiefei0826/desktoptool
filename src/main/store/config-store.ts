@@ -58,18 +58,28 @@ function normalizeCluster(raw: Partial<K8sCluster>): K8sCluster {
   }
 }
 
+const DB_DEFAULT_PORTS: Record<DbConnection['kind'], number> = {
+  mysql: 3306,
+  postgres: 5432,
+  redis: 6379,
+  mongo: 27017
+}
+
 function normalizeDbConnection(raw: Partial<DbConnection>): DbConnection {
   const now = Date.now()
-  const kind = raw.kind === 'postgres' ? 'postgres' : 'mysql'
+  const kind: DbConnection['kind'] =
+    raw.kind === 'postgres' || raw.kind === 'redis' || raw.kind === 'mongo' ? raw.kind : 'mysql'
   return {
     id: raw.id ?? randomUUID(),
     name: raw.name?.trim() || `${kind} ${raw.host ?? ''}`,
     kind,
     host: raw.host ?? '127.0.0.1',
-    port: raw.port ?? (kind === 'postgres' ? 5432 : 3306),
+    port: raw.port ?? DB_DEFAULT_PORTS[kind],
     username: raw.username ?? '',
     database: raw.database ?? '',
     ssl: raw.ssl ?? false,
+    dbIndex: raw.dbIndex ?? 0,
+    authSource: raw.authSource || 'admin',
     tunnelSessionId: raw.tunnelSessionId ?? null,
     createdAt: raw.createdAt ?? now,
     lastUsedAt: raw.lastUsedAt ?? null

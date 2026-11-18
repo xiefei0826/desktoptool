@@ -186,7 +186,7 @@ export interface K8sClusterInfo {
   tunnelActive: boolean
 }
 
-export type DbKind = 'mysql' | 'postgres'
+export type DbKind = 'mysql' | 'postgres' | 'redis' | 'mongo'
 
 export interface DbConnection {
   id: string
@@ -197,10 +197,81 @@ export interface DbConnection {
   username: string
   database: string
   ssl: boolean
+  /** Redis 库序号（0-15） */
+  dbIndex: number
+  /** MongoDB 认证库，默认 admin */
+  authSource: string
   /** 经哪条 SSH 会话建隧道连数据库 */
   tunnelSessionId: string | null
   createdAt: number
   lastUsedAt: number | null
+}
+
+export interface RedisKeyInfo {
+  key: string
+  type: string
+  ttl: number
+  size: number
+}
+
+export interface RedisScanResult {
+  cursor: string
+  keys: RedisKeyInfo[]
+  scanned: number
+}
+
+export interface RedisValueResult {
+  key: string
+  type: string
+  ttl: number
+  size: number
+  value: unknown
+}
+
+export interface RedisCommandResult {
+  command: string
+  type: string
+  value: unknown
+  durationMs: number
+}
+
+export interface RedisConnectResult {
+  version: string
+  mode: string
+  databases: number
+  currentDb: number
+  keyCount: number
+}
+
+export interface MongoDatabaseInfo {
+  name: string
+  sizeOnDisk: number
+}
+
+export interface MongoCollectionInfo {
+  name: string
+  count: number
+}
+
+export interface MongoConnectResult {
+  version: string
+  databases: MongoDatabaseInfo[]
+}
+
+export interface MongoFindRequest {
+  connectionId: string
+  database: string
+  collection: string
+  filter: string
+  sort: string
+  limit: number
+  skip: number
+}
+
+export interface MongoFindResult {
+  documents: unknown[]
+  matched: number
+  durationMs: number
 }
 
 export interface DbColumn {

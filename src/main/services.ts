@@ -15,6 +15,8 @@ import { VncService } from './vnc/service'
 import { LocalTerminalService } from './pty/local-terminal'
 import { K8sService } from './k8s/service'
 import { DbService } from './db/service'
+import { RedisService } from './redis/service'
+import { MongoService } from './mongo/service'
 
 export class AppServices {
   readonly channels = new ChannelRegistry()
@@ -34,6 +36,8 @@ export class AppServices {
   pty!: LocalTerminalService
   k8s!: K8sService
   db!: DbService
+  redis!: RedisService
+  mongo!: MongoService
 
   private initialized = false
 
@@ -68,6 +72,8 @@ export class AppServices {
       (event) => this.send('k8s:watch', event)
     )
     this.db = new DbService(this.config, this.credentials, this.tunnels)
+    this.redis = new RedisService(this.config, this.credentials, this.tunnels)
+    this.mongo = new MongoService(this.config, this.credentials, this.tunnels)
 
     this.initialized = true
   }
@@ -91,6 +97,16 @@ export class AppServices {
     }
     try {
       await this.db.dispose()
+    } catch {
+      /* ignore */
+    }
+    try {
+      await this.redis.dispose()
+    } catch {
+      /* ignore */
+    }
+    try {
+      await this.mongo.dispose()
     } catch {
       /* ignore */
     }

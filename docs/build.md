@@ -148,7 +148,35 @@ node_modules/electron/dist/electron.exe . --smoke-db
 [smoke-db] PASS ["db-parse ok (2 stmts, types=SELECT/UPDATE, tables=users, error=none)","db-parse-error ok (true)","db-split ok (true)","db-split-dollar-quote ok (true)","db-parse-postgres ok (true)","db-connect-error ok (true)"]
 ```
 
-覆盖：语句拆分、MySQL/PostgreSQL 解析、语法错误识别、连接失败提示。连接真实库请用应用界面里的「测试连接」。
+覆盖：语句拆分、MySQL/PostgreSQL 解析、语法错误识别、连接失败提示（含 Redis/MongoDB 的错误文案）。连接真实库请用应用界面里的「测试连接」。
+
+### 4.7 NoSQL 自检（需要一台真实 Redis）
+
+先起一个临时实例（本机已有镜像时秒起）：
+
+```bash
+docker run -d --rm --name dt-smoke-redis -p 16379:6379 redis:8.10.1
+```
+
+然后：
+
+```bash
+node_modules/electron/dist/electron.exe . --smoke-nosql
+```
+
+预期输出：
+
+```
+[smoke-nosql] PASS ["redis-connect ok (8.10.1, db0, 0 keys)","redis-scan ok (2, hash/string)","redis-value-string ok (string/hello)","redis-value-hash ok (hash/2 fields)","redis-ttl ok (true)","redis-del ok (true)"]
+```
+
+会写入 `smoke:key` / `smoke:hash` 两个键，验证完立即删除。结束后清理容器：
+
+```bash
+docker stop dt-smoke-redis
+```
+
+MongoDB 目前没有独立自检，请在界面里用「测试连接」验证。
 
 ## 5. 打包
 

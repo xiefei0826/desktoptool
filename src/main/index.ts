@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { AppServices } from './services'
 import { registerIpc } from './ipc'
-import { runDbSmoke, runK8sSmoke, runK8sWriteSmoke, runSshSmoke } from './smoke'
+import { runDbSmoke, runK8sSmoke, runK8sWriteSmoke, runNoSqlSmoke, runSshSmoke } from './smoke'
 import { allWindows, createWindow, focusFirstWindow } from './window-manager'
 
 let services: AppServices | null = null
@@ -110,6 +110,20 @@ async function bootstrap(): Promise<void> {
         JSON.stringify({ error: String(error), stack: (error as Error)?.stack ?? '' }),
         'utf8'
       )
+    }
+    app.exit(0)
+    return
+  }
+
+  if (process.argv.includes('--smoke-nosql')) {
+    const outputPath = path.join(os.tmpdir(), 'desktop-tool-smoke-nosql.json')
+    try {
+      const logs = await runNoSqlSmoke(services)
+      console.log('[smoke-nosql] PASS', JSON.stringify(logs))
+      writeFileSync(outputPath, JSON.stringify(logs), 'utf8')
+    } catch (error) {
+      console.error('[smoke-nosql] FAIL', error)
+      writeFileSync(outputPath, JSON.stringify({ error: String(error) }), 'utf8')
     }
     app.exit(0)
     return

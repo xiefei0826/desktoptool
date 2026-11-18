@@ -9,7 +9,7 @@ import SftpView from './components/SftpView.vue'
 import VncView from './components/VncView.vue'
 import ForwardsView from './components/ForwardsView.vue'
 import K8sView from './components/K8sView.vue'
-import DbView from './components/DbView.vue'
+import DbTabView from './components/DbTabView.vue'
 import WelcomeView from './components/WelcomeView.vue'
 import StatusBar from './components/StatusBar.vue'
 import SessionDialog from './components/SessionDialog.vue'
@@ -161,7 +161,7 @@ function onDbSaved(connection: DbConnection): void {
                 :cluster-id="tab.clusterId ?? ''"
                 @notice="notify"
               />
-              <DbView
+              <DbTabView
                 v-else-if="tab.kind === 'db'"
                 :key="`${tab.id}:${tab.dbConnectionId}`"
                 :connection-id="tab.dbConnectionId ?? ''"

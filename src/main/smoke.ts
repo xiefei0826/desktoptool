@@ -190,6 +190,53 @@ export async function runK8sSmoke(
 }
 
 /**
+ * NoSQL 自检：连真实 Redis（默认 127.0.0.1:16379），验证命令台 / SCAN / 值预览 / TTL / 删除
+ * 没有实例时会报连接失败，不阻塞其它自检。
+ */
+export async function runNoSqlSmoke(services: AppServices): Promise<string[]> {
+  const logs: string[] = []
+  const port = Number(process.env.SMOKE_REDIS_PORT ?? 16379)
+
+  const redis = await services.config.saveDbConnection({
+    name: '__smoke_redis_live__',
+    kind: 'redis',
+    host: '127.0.0.1',
+    port,
+    username: '',
+    database: ''
+  })
+
+  try {
+    const info = await services.redis.connect(redis.id)
+    logs.push(`redis-connect ok (${info.version}, db${info.currentDb}, ${info.keyCount} keys)`)
+
+    await services.redis.command(redis.id, 'SET smoke:key hello')
+    await services.redis.command(redis.id, 'HSET smoke:hash f1 v1 f2 v2')
+
+    const scan = await services.redis.scan(redis.id, '0', 'smoke:*', 200)
+    logs.push(`redis-scan ok (${scan.keys.length}, ${scan.keys.map((item) => item.type).join('/')})`)
+
+    const stringValue = await services.redis.value(redis.id, 'smoke:key')
+    logs.push(`redis-value-string ok (${stringValue.type}/${String(stringValue.value)})`)
+
+    const hashValue = await services.redis.value(redis.id, 'smoke:hash')
+    logs.push(`redis-value-hash ok (${hashValue.type}/${String(hashValue.size)} fields)`)
+
+    await services.redis.setTtl(redis.id, 'smoke:key', 120)
+    const afterTtl = await services.redis.value(redis.id, 'smoke:key')
+    logs.push(`redis-ttl ok (${afterTtl.ttl > 0})`)
+
+    const removed = await services.redis.remove(redis.id, ['smoke:key', 'smoke:hash'])
+    logs.push(`redis-del ok (${removed === 2})`)
+  } finally {
+    await services.redis.disconnect(redis.id).catch(() => undefined)
+    await services.config.deleteDbConnection(redis.id).catch(() => undefined)
+  }
+
+  return logs
+}
+
+/**
  * 数据库自检：SQL 拆分 / 解析（含错误分支）/ 连接失败提示
  * 不依赖任何真实数据库，纯本地验证。
  */
@@ -238,6 +285,48 @@ export async function runDbSmoke(services: AppServices): Promise<string[]> {
     )
   } finally {
     await services.config.deleteDbConnection(connection.id).catch(() => undefined)
+  }
+
+  const redisConnection = await services.config.saveDbConnection({
+    name: '__smoke_redis__',
+    kind: 'redis',
+    host: '127.0.0.1',
+    port: 6399,
+    username: '',
+    database: ''
+  })
+
+  try {
+    await services.redis.test(redisConnection, '')
+    logs.push('redis-connect-error ok (false)')
+  } catch (error) {
+    const message = (error as Error).message
+    const friendly = /连接被拒绝|连接超时|认证失败/.test(message)
+    logs.push(
+      `redis-connect-error ok (${friendly})${friendly ? '' : ` msg=${message.slice(0, 90)}`}`
+    )
+  } finally {
+    await services.config.deleteDbConnection(redisConnection.id).catch(() => undefined)
+  }
+
+  const mongoConnection = await services.config.saveDbConnection({
+    name: '__smoke_mongo__',
+    kind: 'mongo',
+    host: '127.0.0.1',
+    port: 27099,
+    username: '',
+    database: ''
+  })
+
+  try {
+    await services.mongo.test(mongoConnection, '')
+    logs.push('mongo-connect-error ok (false)')
+  } catch (error) {
+    logs.push(
+      `mongo-connect-error ok (${/连接被拒绝|连接超时/.test((error as Error).message)})`
+    )
+  } finally {
+    await services.config.deleteDbConnection(mongoConnection.id).catch(() => undefined)
   }
 
   return logs

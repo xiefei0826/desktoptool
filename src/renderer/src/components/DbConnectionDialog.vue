@@ -26,16 +26,69 @@ const messageKind = ref<'info' | 'error'>('info')
 const sshSessions = computed(() => store.sessions.filter((session) => session.protocol === 'ssh'))
 const isEdit = computed(() => Boolean(props.connectionId))
 
+interface DbProfile {
+  port: number
+  username: string
+  database: string
+  authSource: string
+  databaseLabel: string
+  databaseHint: string
+  usernameHint: string
+}
+
+/** 不同数据库的默认端口 / 用户名 / 默认库各不相同 */
+const PROFILES: Record<DbKind, DbProfile> = {
+  mysql: {
+    port: 3306,
+    username: 'root',
+    database: '',
+    authSource: 'admin',
+    databaseLabel: '数据库',
+    databaseHint: '可选，留空则列出全部库',
+    usernameHint: 'root'
+  },
+  postgres: {
+    port: 5432,
+    username: 'postgres',
+    database: 'postgres',
+    authSource: 'admin',
+    databaseLabel: '数据库',
+    databaseHint: '默认 postgres',
+    usernameHint: 'postgres'
+  },
+  redis: {
+    port: 6379,
+    username: '',
+    database: '',
+    authSource: 'admin',
+    databaseLabel: '数据库',
+    databaseHint: 'Redis 没有库名，用库序号',
+    usernameHint: '通常为空（旧版 Redis 只有密码）'
+  },
+  mongo: {
+    port: 27017,
+    username: '',
+    database: 'admin',
+    authSource: 'admin',
+    databaseLabel: '默认数据库',
+    databaseHint: '默认 admin',
+    usernameHint: '未开启认证时留空'
+  }
+}
+
 function emptyConnection(): DbConnection {
+  const profile = PROFILES.mysql
   return {
     id: '',
     name: '',
     kind: 'mysql',
     host: '127.0.0.1',
-    port: 3306,
-    username: 'root',
-    database: '',
+    port: profile.port,
+    username: profile.username,
+    database: profile.database,
     ssl: false,
+    dbIndex: 0,
+    authSource: profile.authSource,
     tunnelSessionId: null,
     createdAt: 0,
     lastUsedAt: null
@@ -63,11 +116,26 @@ watch(
   { immediate: true }
 )
 
+/** 切换类型时只替换「仍是上一种默认值」的字段，不覆盖用户手填的内容 */
 function onKindChange(kind: DbKind): void {
+  if (kind === form.value.kind) return
+  const previous = PROFILES[form.value.kind]
+  const next = PROFILES[kind]
+
+  if (!form.value.port || form.value.port === previous.port) form.value.port = next.port
+  if (!form.value.username || form.value.username === previous.username) {
+    form.value.username = next.username
+  }
+  if (!form.value.database || form.value.database === previous.database) {
+    form.value.database = next.database
+  }
+  if (!form.value.authSource) form.value.authSource = next.authSource
+  if (form.value.dbIndex === undefined) form.value.dbIndex = 0
+
   form.value.kind = kind
-  form.value.port = kind === 'postgres' ? 5432 : 3306
-  if (kind === 'postgres' && form.value.username === 'root') form.value.username = 'postgres'
 }
+
+const profile = computed(() => PROFILES[form.value.kind])
 
 /** Vue 的响应式对象是 Proxy，直接传 IPC 会报 "An object could not be cloned" */
 function toPlain(): DbConnection {
@@ -81,6 +149,8 @@ function toPlain(): DbConnection {
     username: value.username,
     database: value.database,
     ssl: Boolean(value.ssl),
+    dbIndex: Number(value.dbIndex ?? 0),
+    authSource: value.authSource || 'admin',
     tunnelSessionId: value.tunnelSessionId ?? null,
     createdAt: value.createdAt,
     lastUsedAt: value.lastUsedAt
@@ -97,7 +167,13 @@ async function test(): Promise<void> {
   try {
     const result = await window.api.db.testConnection(toPlain(), password.value)
     messageKind.value = 'info'
-    message.value = `连接成功：${result.serverVersion}（${result.metadata.tables.length} 张表）`
+    if ('serverVersion' in result) {
+      message.value = `连接成功：${result.serverVersion}（${result.metadata.tables.length} 张表）`
+    } else if ('keyCount' in result) {
+      message.value = `连接成功：Redis ${result.version}（db${result.currentDb}，${result.keyCount} 个键）`
+    } else {
+      message.value = `连接成功：MongoDB ${result.version}（${result.databases.length} 个库）`
+    }
   } catch (error) {
     messageKind.value = 'error'
     message.value = errorMessage(error)
@@ -138,10 +214,16 @@ async function save(): Promise<void> {
       <div class="modal-body">
         <div class="seg">
           <button :class="{ active: form.kind === 'mysql' }" @click="onKindChange('mysql')">
-            MySQL / MariaDB
+            MySQL
           </button>
           <button :class="{ active: form.kind === 'postgres' }" @click="onKindChange('postgres')">
             PostgreSQL
+          </button>
+          <button :class="{ active: form.kind === 'redis' }" @click="onKindChange('redis')">
+            Redis
+          </button>
+          <button :class="{ active: form.kind === 'mongo' }" @click="onKindChange('mongo')">
+            MongoDB
           </button>
         </div>
 
@@ -163,7 +245,7 @@ async function save(): Promise<void> {
 
           <div class="dialog-row">
             <label>用户名</label>
-            <input v-model="form.username" class="field" />
+            <input v-model="form.username" class="field" :placeholder="profile.usernameHint" />
           </div>
 
           <div class="dialog-row">
@@ -176,9 +258,25 @@ async function save(): Promise<void> {
             />
           </div>
 
-          <div class="dialog-row">
-            <label>数据库</label>
-            <input v-model="form.database" class="field" placeholder="可选，留空则使用默认库" />
+          <div v-if="form.kind === 'redis'" class="dialog-row">
+            <label>库序号</label>
+            <input v-model.number="form.dbIndex" class="field" type="number" min="0" max="15" />
+          </div>
+
+          <template v-else-if="form.kind === 'mongo'">
+            <div class="dialog-row">
+              <label>{{ profile.databaseLabel }}</label>
+              <input v-model="form.database" class="field" :placeholder="profile.databaseHint" />
+            </div>
+            <div class="dialog-row">
+              <label>认证库</label>
+              <input v-model="form.authSource" class="field" placeholder="admin" />
+            </div>
+          </template>
+
+          <div v-else class="dialog-row">
+            <label>{{ profile.databaseLabel }}</label>
+            <input v-model="form.database" class="field" :placeholder="profile.databaseHint" />
           </div>
 
           <div class="dialog-row">

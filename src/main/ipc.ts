@@ -10,7 +10,8 @@ import type {
   K8sListQuery,
   K8sObjectRef,
   K8sPodLogRequest,
-  K8sWatchQuery
+  K8sWatchQuery,
+  MongoFindRequest
 } from '../shared/types'
 import type {
   AppConfig,
@@ -382,9 +383,11 @@ export function registerIpc(services: AppServices): void {
     services.notifyConfigChanged()
   })
 
-  ipcMain.handle('db:testConnection', (_event, connection: DbConnection, password: string) =>
-    services.db.testConnection(connection, password)
-  )
+  ipcMain.handle('db:testConnection', (_event, connection: DbConnection, password: string) => {
+    if (connection.kind === 'redis') return services.redis.test(connection, password)
+    if (connection.kind === 'mongo') return services.mongo.test(connection, password)
+    return services.db.testConnection(connection, password)
+  })
 
   ipcMain.handle('db:connect', (_event, id: string) => services.db.connect(id))
 
@@ -409,6 +412,44 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle('db:query', (_event, request: DbQueryRequest) => services.db.query(request))
 
   ipcMain.handle('db:parse', (_event, kind: DbKind, sql: string) => services.db.parse(kind, sql))
+
+  ipcMain.handle('redis:connect', (_event, id: string) => services.redis.connect(id))
+  ipcMain.handle(
+    'redis:scan',
+    (_event, id: string, cursor: string, pattern: string, count: number) =>
+      services.redis.scan(id, cursor, pattern, count)
+  )
+  ipcMain.handle('redis:value', (_event, id: string, key: string) =>
+    services.redis.value(id, key)
+  )
+  ipcMain.handle('redis:command', (_event, id: string, raw: string) =>
+    services.redis.command(id, raw)
+  )
+  ipcMain.handle('redis:remove', (_event, id: string, keys: string[]) =>
+    services.redis.remove(id, keys)
+  )
+  ipcMain.handle('redis:setTtl', (_event, id: string, key: string, ttl: number) =>
+    services.redis.setTtl(id, key, ttl)
+  )
+  ipcMain.handle('redis:setString', (_event, id: string, key: string, value: string) =>
+    services.redis.setString(id, key, value)
+  )
+  ipcMain.handle('redis:switchDb', (_event, id: string, index: number) =>
+    services.redis.switchDb(id, index)
+  )
+  ipcMain.handle('redis:disconnect', (_event, id: string) => services.redis.disconnect(id))
+
+  ipcMain.handle('mongo:connect', (_event, id: string) => services.mongo.connect(id))
+  ipcMain.handle('mongo:collections', (_event, id: string, database: string) =>
+    services.mongo.collections(id, database)
+  )
+  ipcMain.handle('mongo:find', (_event, request: MongoFindRequest) => services.mongo.find(request))
+  ipcMain.handle(
+    'mongo:deleteOne',
+    (_event, id: string, database: string, collection: string, documentId: string) =>
+      services.mongo.deleteOne(id, database, collection, documentId)
+  )
+  ipcMain.handle('mongo:disconnect', (_event, id: string) => services.mongo.disconnect(id))
 
   ipcMain.handle('clipboard:read', () => clipboard.readText())
 

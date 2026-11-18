@@ -26,6 +26,14 @@ import type {
   K8sWatchEvent,
   K8sWatchQuery,
   LaunchResult,
+  MongoCollectionInfo,
+  MongoConnectResult,
+  MongoFindRequest,
+  MongoFindResult,
+  RedisCommandResult,
+  RedisConnectResult,
+  RedisScanResult,
+  RedisValueResult,
   RdClientInfo,
   SessionConfig,
   SessionInput,
@@ -171,7 +179,11 @@ export interface Api {
     listConnections(): Promise<DbConnection[]>
     saveConnection(input: Partial<DbConnection> & { password?: string }): Promise<DbConnection>
     deleteConnection(id: string): Promise<void>
-    testConnection(connection: DbConnection, password: string): Promise<DbConnectResult>
+    /** 按 connection.kind 分派到 SQL / Redis / MongoDB */
+    testConnection(
+      connection: DbConnection,
+      password: string
+    ): Promise<DbConnectResult | RedisConnectResult | MongoConnectResult>
     connect(id: string): Promise<DbConnectResult>
     disconnect(id: string): Promise<void>
     cancel(id: string): Promise<void>
@@ -181,6 +193,29 @@ export interface Api {
     transaction(id: string, action: 'begin' | 'commit' | 'rollback'): Promise<boolean>
     query(request: DbQueryRequest): Promise<DbQueryResponse>
     parse(kind: DbKind, sql: string): Promise<DbParseResult>
+  }
+  redis: {
+    connect(id: string): Promise<RedisConnectResult>
+    scan(id: string, cursor: string, pattern: string, count: number): Promise<RedisScanResult>
+    value(id: string, key: string): Promise<RedisValueResult>
+    command(id: string, raw: string): Promise<RedisCommandResult>
+    remove(id: string, keys: string[]): Promise<number>
+    setTtl(id: string, key: string, ttl: number): Promise<void>
+    setString(id: string, key: string, value: string): Promise<void>
+    switchDb(id: string, index: number): Promise<RedisConnectResult>
+    disconnect(id: string): Promise<void>
+  }
+  mongo: {
+    connect(id: string): Promise<MongoConnectResult>
+    collections(id: string, database: string): Promise<MongoCollectionInfo[]>
+    find(request: MongoFindRequest): Promise<MongoFindResult>
+    deleteOne(
+      id: string,
+      database: string,
+      collection: string,
+      documentId: string
+    ): Promise<boolean>
+    disconnect(id: string): Promise<void>
   }
   clipboard: {
     read(): Promise<string>

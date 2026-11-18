@@ -46,7 +46,8 @@
 | 端口转发 | 本地 `-L`、远程 `-R`、动态 SOCKS5 `-D`，运行态开关与状态展示 |
 | 远程桌面 | RDP 三平台拉起（含凭据临时注入、`.rdp` 生成、用完清理）；VNC 内嵌（noVNC）；RDP/VNC over SSH 隧道 |
 | Kubernetes | kubeconfig 导入（文件/默认/粘贴/WSL）、context/namespace 切换、资源发现、对象列表 + watch、YAML 查看/编辑（服务端 apply）、删除、扩缩容、滚动重启、Pod 日志、Pod Exec、SSH 隧道接入 |
-| 数据库 | MySQL/MariaDB 与 PostgreSQL 连接、结构树（库/表/列/键/索引）、SQL 编辑器（高亮 + schema 补全）、格式化、解析、多查询页、执行与结果网格、单元格编辑生成 UPDATE、事务、切库 |
+| 数据库（SQL） | MySQL/MariaDB 与 PostgreSQL 连接、结构树（库/表/列/键/索引）、SQL 编辑器（高亮 + schema 补全）、格式化、解析、多查询页、执行与结果网格、单元格编辑生成 UPDATE、事务、切库 |
+| 数据库（NoSQL） | **Redis**：SCAN 浏览、按类型预览、TTL、删除、命令台、切 db；**MongoDB**：库/集合树、JSON filter/sort/limit 查询。两者都支持 SSH 隧道与密码加密 |
 | 工程 | 多窗口、跨窗口配置同步、三平台打包、5 组无人值守自检 |
 
 ### 1.3 硬性设计约束
@@ -113,6 +114,8 @@ node_modules/electron/dist/electron.exe . --smoke-db        # 不需要真实数
   "node-sql-parser": "^5.4.0",
   "pg": "^8.23.1",
   "ssh2": "^1.16.0",
+  "ioredis": "^5.4.0",       // Redis 驱动（CJS）
+  "mongodb": "^6.10.0",      // MongoDB 官方驱动（CJS）
   "ws": "^8.18.0"            // 仅内置 VNC 的 WS 桥使用
 }
 // optionalDependencies
@@ -179,7 +182,9 @@ desktop-tool/
    │  │  ├─ macos.ts                # Windows App / 屏幕共享
    │  │  └─ linux.ts                # xfreerdp → remmina → rdesktop → krdc
    │  ├─ k8s/service.ts             # 集群/发现/CRUD/watch/日志/Exec/隧道
-   │  └─ db/service.ts              # 会话/查询/元数据/解析/事务/切库
+   │  ├─ db/service.ts              # SQL：会话/查询/元数据/解析/事务/切库
+   │  ├─ redis/service.ts           # Redis：SCAN/值预览/命令台/TTL
+   │  └─ mongo/service.ts           # MongoDB：库集合树/find/删除
    └─ renderer/
       ├─ index.html                 # CSP
       └─ src/
@@ -194,7 +199,7 @@ desktop-tool/
             ├─ SftpView.vue ForwardsView.vue ForwardDialog.vue
             ├─ VncView.vue WelcomeView.vue
             ├─ ClusterDialog.vue K8sView.vue
-            └─ DbConnectionDialog.vue DbView.vue
+            └─ DbConnectionDialog.vue DbTabView.vue DbView.vue RedisView.vue MongoView.vue
 ```
 
 ### 3.1 进程职责边界
@@ -461,6 +466,28 @@ db:switchDatabase    (id, database) → DbMetadata
 db:transaction       (id, 'begin'|'commit'|'rollback') → boolean(inTransaction)
 db:query             (DbQueryRequest) → DbQueryResponse
 db:parse             (kind, sql) → DbParseResult                  // 纯本地，不连库
+```
+
+`db:testConnection` 是**分派入口**：按 `connection.kind` 调 `DbService` / `RedisService` / `MongoService` 的 `test()`，因此「测试连接」对所有类型通用。
+
+### 5.6 NoSQL 通道
+
+```
+redis:connect    (id) → RedisConnectResult{version,mode,databases,currentDb,keyCount}
+redis:scan       (id, cursor, pattern, count) → RedisScanResult{cursor,keys[{key,type,ttl}],scanned}
+redis:value      (id, key) → RedisValueResult{key,type,ttl,size,value}
+redis:command    (id, raw) → RedisCommandResult{command,type,value,durationMs}
+redis:remove     (id, keys[]) → number
+redis:setTtl     (id, key, ttl)        // ttl<=0 表示 persist
+redis:setString  (id, key, value)
+redis:switchDb   (id, index) → RedisConnectResult
+redis:disconnect (id)
+
+mongo:connect    (id) → MongoConnectResult{version,databases[]}
+mongo:collections(id, db) → MongoCollectionInfo[]{name,count}
+mongo:find       (MongoFindRequest) → MongoFindResult{documents,matched,durationMs}
+mongo:deleteOne  (id, db, collection, documentId) → boolean
+mongo:disconnect (id)
 ```
 
 ### 5.6 `Api` 类型与 preload 实现要点
@@ -891,6 +918,17 @@ class ResizableSink extends Writable {
 - 指定 `tunnelSessionId` 时先 `tunnels.open(sessionId, host, port)`，改连 `127.0.0.1:<本地端口>`。
 - 「数据库」留空是合法的：MySQL 会连到无默认库，元数据列出全部库（见 10.4）。
 
+**新建连接的类型默认值（`DbConnectionDialog` 的 `PROFILES`）**
+
+| 类型 | 端口 | 用户名 | 默认库 | 说明 |
+|---|---|---|---|---|
+| MySQL | 3306 | `root` | 留空 | 留空 = 列出全部库（更实用），填了则只显示该库 |
+| PostgreSQL | 5432 | `postgres` | `postgres` | PG 必须连到具体库 |
+| Redis | 6379 | 留空 | —（用 dbIndex 0-15） | 旧版 Redis 只有密码没有用户名 |
+| MongoDB | 27017 | 留空 | `admin` | 未开启认证时用户名留空；authSource 默认 `admin` |
+
+切换类型时只替换「仍等于上一种类型默认值」的字段，用户手填过的内容不会被覆盖。
+
 ### 10.2 查询执行
 
 - 先 `splitStatements(sql)` 拆分，再**逐条执行**（比 `multipleStatements: true` 更安全，也能精确定位错误在第几条）。
@@ -1046,6 +1084,25 @@ const columns = parser.columnList(statement, options)
 3. 用主键值构造 `WHERE`，生成 `UPDATE <qualified> SET <col> = <literal> WHERE <pk> = <literal>;`
 4. 弹窗预览，SQL 可编辑，再「执行」或「插入编辑器」。
 5. `sqlLiteral`：`null→NULL`、number/bool 原样、字符串 `'` → `''`。
+
+### 10.8 Redis 实现要点
+
+- 驱动 `ioredis`，连接参数：`{ host, port, password, username, db: dbIndex, tls, connectTimeout: 10000, maxRetriesPerRequest: 1, enableOfflineQueue: false, retryStrategy: t => t > 2 ? null : 300 }`。
+- **不要用 `lazyConnect` 后 await `connect()`**：`connect()` 可能「乐观 resolve」，随后首个命令抛 `Connection is closed.`。正确做法是自动连接 + 等 `ready` 事件（失败走 `error` 事件或 8s 超时），再 `PING` 探活。
+- 失败信息要注意 `AggregateError`：ioredis 重试失败时 `message` 为空，真实 `ECONNREFUSED` 在 `error.errors[]` 里，必须拼接后判断。
+- 浏览用 `SCAN cursor MATCH pattern COUNT n`（**永远不要用 `KEYS *`**），返回 `cursor` 给前端做「加载更多」；每页键用 `pipeline` 批量取 `TYPE` + `TTL`。
+- 值预览按类型分派：`string→GET/STRLEN`、`hash→HGETALL/HLEN`、`list→LRANGE 0 199/LLEN`、`set→SMEMBERS/SCARD`、`zset→ZRANGE 0 199 WITHSCORES/ZCARD`、`stream→XRANGE - + COUNT 20`。
+- 命令台：自己写 tokenizer 支持引号（`SET "a b" 1`），再 `client.call(cmd, ...args)`。
+- 切 db 需要重建连接（`db` 是连接级参数），所以 `switchDb` 先断开旧连接并写回 `dbIndex`，再重连。
+
+### 10.9 MongoDB 实现要点
+
+- 驱动 `mongodb`（官方），URI：`mongodb://[user:pass@]host:port/?authSource=<authSource>&directConnection=true&serverSelectionTimeoutMS=8000`，`username`/`password` 必须 `encodeURIComponent`。
+- 版本与库列表：`client.db().admin().serverInfo()` + `listDatabases()`；`admin/local/config` 过滤掉不展示。
+- 集合列表：`db.listCollections()`，逐个 `estimatedDocumentCount()`（用估算值，避免全表扫描）。
+- 查询：`filter` / `sort` 让用户输入 JSON 文本，服务端 `JSON.parse` 校验（必须是对象），`collection.find(filter).sort(sort).skip(skip).limit(limit)` + `countDocuments(filter)`。
+- 结果序列化：`JSON.stringify` 前用 replacer 把 BSON 对象（有 `toHexString`）转成字符串，避免 `ObjectId` 变 `{}`。
+- 单条删除：`_id` 是 24 位十六进制时转 `new ObjectId(id)`，否则按字符串匹配。
 
 ---
 
@@ -1272,6 +1329,9 @@ npm run build:mac      # dmg（必须在 macOS）
 | 16 | Windows 下自检无输出 | Electron console 捕获时序 | 结果同时写 `%TEMP%/*.json` 再读取 |
 | 17 | `mstsc` 中文乱码 | `.rdp` 编码错误 | UTF-16LE + BOM |
 | 18 | `window.prompt` 不可用 | Electron 不支持 | 用自写 `InputModal` / 内联弹窗 |
+| 19 | Redis 报 `Connection is closed.` 而非 `ECONNREFUSED` | `lazyConnect` 下 `connect()` 乐观 resolve | 自动连接 + 等 `ready` 事件 + `PING` 探活 |
+| 20 | Redis 错误信息为空 | 重试失败抛 `AggregateError` | 拼接 `error.errors[]` 后再匹配错误码 |
+| 21 | 新窗口/新入口打开数据库后视图不对 | 只有 SQL 视图 | 用 `DbTabView` 按 `connection.kind` 分派 SQL / Redis / Mongo |
 
 ---
 

@@ -219,6 +219,25 @@ const api: Api = {
     query: (request) => invoke('db:query', request),
     parse: (kind, sql) => invoke('db:parse', kind, sql)
   },
+  redis: {
+    connect: (id) => invoke('redis:connect', id),
+    scan: (id, cursor, pattern, count) => invoke('redis:scan', id, cursor, pattern, count),
+    value: (id, key) => invoke('redis:value', id, key),
+    command: (id, raw) => invoke('redis:command', id, raw),
+    remove: (id, keys) => invoke('redis:remove', id, keys),
+    setTtl: (id, key, ttl) => invoke('redis:setTtl', id, key, ttl),
+    setString: (id, key, value) => invoke('redis:setString', id, key, value),
+    switchDb: (id, index) => invoke('redis:switchDb', id, index),
+    disconnect: (id) => invoke('redis:disconnect', id)
+  },
+  mongo: {
+    connect: (id) => invoke('mongo:connect', id),
+    collections: (id, database) => invoke('mongo:collections', id, database),
+    find: (request) => invoke('mongo:find', request),
+    deleteOne: (id, database, collection, documentId) =>
+      invoke('mongo:deleteOne', id, database, collection, documentId),
+    disconnect: (id) => invoke('mongo:disconnect', id)
+  },
   clipboard: {
     read: () => invoke('clipboard:read'),
     write: (text) => invoke('clipboard:write', text)
