@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import { AppServices } from './services'
 import { registerIpc } from './ipc'
-import { runK8sSmoke, runSshSmoke } from './smoke'
+import { runK8sSmoke, runK8sWriteSmoke, runSshSmoke } from './smoke'
 import { allWindows, createWindow, focusFirstWindow } from './window-manager'
 
 let services: AppServices | null = null
@@ -82,6 +82,19 @@ async function bootstrap(): Promise<void> {
 
   if (process.argv.includes('--smoke-test')) {
     runWindowSmokeTest(mainWindow)
+  }
+
+  if (process.argv.includes('--smoke-k8s-write')) {
+    const activeServices = services
+    mainWindow.webContents.once('did-finish-load', async () => {
+      try {
+        const logs = await runK8sWriteSmoke(activeServices)
+        console.log('[smoke-k8s-write] PASS', JSON.stringify(logs))
+      } catch (error) {
+        console.error('[smoke-k8s-write] FAIL', error)
+      }
+      app.exit(0)
+    })
   }
 
   if (process.argv.includes('--smoke-k8s')) {

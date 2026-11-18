@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type {
   K8sCategory,
   K8sClusterInfo,
+  K8sObjectRef,
   K8sObjectSummary,
   K8sResourceType
 } from '@shared/types'
@@ -46,6 +47,13 @@ const yamlText = ref('')
 const yamlLoading = ref(false)
 const picker = ref<{ pod: K8sObjectSummary; containers: string[]; mode: 'log' | 'exec' } | null>(null)
 
+const expandedCategories = ref<Set<K8sCategory>>(loadExpandedCategories())
+const editing = ref(false)
+const editText = ref('')
+const saving = ref(false)
+const scaleModal = ref(false)
+const scaleValue = ref('1')
+
 let watchId = ''
 let unregisterWatch: (() => void) | null = null
 
@@ -75,6 +83,132 @@ const visibleItems = computed(() => {
 const clusterName = computed(
   () => store.clusters.find((cluster) => cluster.id === props.clusterId)?.name ?? 'Kubernetes'
 )
+
+const scalable = computed(() =>
+  ['Deployment', 'StatefulSet', 'ReplicaSet'].includes(selected.value?.kind ?? '')
+)
+const restartable = computed(() =>
+  ['Deployment', 'StatefulSet', 'DaemonSet'].includes(selected.value?.kind ?? '')
+)
+
+function loadExpandedCategories(): Set<K8sCategory> {
+  try {
+    const raw = localStorage.getItem('dt.k8s.expanded')
+    if (raw) return new Set(JSON.parse(raw) as K8sCategory[])
+  } catch {
+    /* ignore */
+  }
+  return new Set()
+}
+
+function persistExpanded(): void {
+  try {
+    localStorage.setItem('dt.k8s.expanded', JSON.stringify([...expandedCategories.value]))
+  } catch {
+    /* ignore */
+  }
+}
+
+function toggleCategory(category: K8sCategory): void {
+  const next = new Set(expandedCategories.value)
+  if (next.has(category)) next.delete(category)
+  else next.add(category)
+  expandedCategories.value = next
+  persistExpanded()
+}
+
+function isExpanded(category: K8sCategory): boolean {
+  return typeFilter.value.trim() !== '' || expandedCategories.value.has(category)
+}
+
+function objectRef(): K8sObjectRef | null {
+  const row = selected.value
+  if (!row) return null
+  return {
+    apiVersion: row.apiVersion || activeType.value?.apiVersion || 'v1',
+    kind: row.kind || activeType.value?.kind || '',
+    namespace: row.namespace,
+    name: row.name
+  }
+}
+
+function startEdit(): void {
+  editing.value = true
+  editText.value = yamlText.value
+}
+
+function cancelEdit(): void {
+  editing.value = false
+  editText.value = ''
+}
+
+async function saveEdit(): Promise<void> {
+  saving.value = true
+  try {
+    const message = await window.api.k8s.applyObject(props.clusterId, editText.value)
+    editing.value = false
+    emit('notice', 'success', message)
+    await refreshList()
+    const current = selected.value
+    if (current) await selectObject(current)
+  } catch (error) {
+    emit('notice', 'error', errorMessage(error))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteSelected(): Promise<void> {
+  const ref = objectRef()
+  if (!ref) return
+  if (!window.confirm(`确定删除 ${ref.kind} ${ref.name}？此操作不可撤销。`)) return
+  try {
+    await window.api.k8s.deleteObject(props.clusterId, ref)
+    emit('notice', 'success', `已删除 ${ref.name}`)
+    closeDetail()
+    await refreshList()
+  } catch (error) {
+    emit('notice', 'error', errorMessage(error))
+  }
+}
+
+function askScale(): void {
+  const statusText = selected.value?.status ?? ''
+  const replicas = statusText.includes('/') ? statusText.split('/')[1] : '1'
+  scaleValue.value = String(Number(replicas) || 1)
+  scaleModal.value = true
+}
+
+async function confirmScale(): Promise<void> {
+  const ref = objectRef()
+  const replicas = Number(scaleValue.value)
+  if (!ref) return
+  if (!Number.isFinite(replicas) || replicas < 0) {
+    emit('notice', 'error', '请输入合法的副本数')
+    return
+  }
+  scaleModal.value = false
+  try {
+    await window.api.k8s.scaleObject(props.clusterId, { ...ref, replicas })
+    emit('notice', 'success', `已将 ${ref.name} 扩缩到 ${replicas} 个副本`)
+    await refreshList()
+  } catch (error) {
+    emit('notice', 'error', errorMessage(error))
+  }
+}
+
+async function restartSelected(): Promise<void> {
+  const ref = objectRef()
+  if (!ref) return
+  if (!window.confirm(`对 ${ref.kind} ${ref.name} 触发滚动重启？`)) return
+  try {
+    await window.api.k8s.restartObject(props.clusterId, ref)
+    emit('notice', 'success', '已触发滚动重启')
+    await refreshList()
+  } catch (error) {
+    emit('notice', 'error', errorMessage(error))
+  }
+}
 
 async function init(): Promise<void> {
   loading.value = true
@@ -201,6 +335,8 @@ async function changeNamespace(event: Event): Promise<void> {
 
 async function selectObject(row: K8sObjectSummary): Promise<void> {
   selected.value = row
+  editing.value = false
+  editText.value = ''
   yamlText.value = ''
   yamlLoading.value = true
   try {
@@ -220,6 +356,8 @@ async function selectObject(row: K8sObjectSummary): Promise<void> {
 function closeDetail(): void {
   selected.value = null
   yamlText.value = ''
+  editing.value = false
+  editText.value = ''
 }
 
 async function copyName(row: K8sObjectSummary): Promise<void> {
@@ -323,7 +461,7 @@ onBeforeUnmount(() => {
 
       <span class="spacer" />
       <input v-model="nameFilter" class="field filter" placeholder="过滤名称" />
-      <span class="badge">只读模式</span>
+      <span class="badge warn">可编辑</span>
     </div>
 
     <div v-if="errorText" class="error-bar">
@@ -336,17 +474,26 @@ onBeforeUnmount(() => {
         <input v-model="typeFilter" class="field type-search" placeholder="搜索资源类型" />
         <div class="type-list">
           <div v-for="group in groupedTypes" :key="group.category" class="type-group">
-            <div class="type-title">{{ group.label }}</div>
-            <button
-              v-for="type in group.types"
-              :key="`${type.apiVersion}/${type.kind}`"
-              class="type-item"
-              :class="{ active: activeType?.kind === type.kind && activeType?.apiVersion === type.apiVersion }"
-              @click="selectType(type)"
-            >
-              <span class="type-kind">{{ type.kind }}</span>
-              <span class="type-meta">{{ type.apiVersion }}<template v-if="shortNames(type)"> · {{ shortNames(type) }}</template></span>
+            <button class="type-title" @click="toggleCategory(group.category)">
+              <Icon
+                :name="isExpanded(group.category) ? 'chevronDown' : 'chevronRight'"
+                :size="11"
+              />
+              <span class="type-title-label">{{ group.label }}</span>
+              <span class="type-count">{{ group.types.length }}</span>
             </button>
+            <template v-if="isExpanded(group.category)">
+              <button
+                v-for="type in group.types"
+                :key="`${type.apiVersion}/${type.kind}`"
+                class="type-item"
+                :class="{ active: activeType?.kind === type.kind && activeType?.apiVersion === type.apiVersion }"
+                @click="selectType(type)"
+              >
+                <span class="type-kind">{{ type.kind }}</span>
+                <span class="type-meta">{{ type.apiVersion }}<template v-if="shortNames(type)"> · {{ shortNames(type) }}</template></span>
+              </button>
+            </template>
           </div>
           <div v-if="groupedTypes.length === 0" class="empty-hint" style="padding: 20px 8px">
             没有匹配的资源类型
@@ -431,15 +578,57 @@ onBeforeUnmount(() => {
       <aside v-if="selected" class="detail">
         <div class="detail-head">
           <span class="detail-title">{{ selected.name }}</span>
-          <button class="icon-btn tiny" title="复制 YAML" @click="copyYaml">
-            <Icon name="copy" :size="12" />
-          </button>
-          <button class="icon-btn tiny" title="关闭" @click="closeDetail">
-            <Icon name="close" :size="12" />
-          </button>
+          <template v-if="!editing">
+            <button class="icon-btn tiny" title="编辑 YAML" @click="startEdit">
+              <Icon name="edit" :size="12" />
+            </button>
+            <button v-if="scalable" class="icon-btn tiny" title="扩容 / 缩容" @click="askScale">
+              <Icon name="plus" :size="12" />
+            </button>
+            <button v-if="restartable" class="icon-btn tiny" title="滚动重启" @click="restartSelected">
+              <Icon name="refresh" :size="12" />
+            </button>
+            <button class="icon-btn tiny" title="复制 YAML" @click="copyYaml">
+              <Icon name="copy" :size="12" />
+            </button>
+            <button class="icon-btn tiny danger" title="删除" @click="deleteSelected">
+              <Icon name="trash" :size="12" />
+            </button>
+            <button class="icon-btn tiny" title="关闭" @click="closeDetail">
+              <Icon name="close" :size="12" />
+            </button>
+          </template>
         </div>
-        <pre class="yaml">{{ yamlLoading ? '加载中…' : yamlText }}</pre>
+
+        <div v-if="editing" class="edit-wrap">
+          <textarea v-model="editText" class="edit-area" spellcheck="false" />
+          <div class="edit-foot">
+            <span class="hint-text">保存会以服务端 apply 方式提交</span>
+            <button class="icon-btn" :disabled="saving" @click="cancelEdit">取消</button>
+            <button class="icon-btn primary" :disabled="saving" @click="saveEdit">
+              {{ saving ? '提交中…' : '应用' }}
+            </button>
+          </div>
+        </div>
+        <pre v-else class="yaml">{{ yamlLoading ? '加载中…' : yamlText }}</pre>
       </aside>
+    </div>
+
+    <div v-if="scaleModal" class="modal-mask" @mousedown.self="scaleModal = false">
+      <div class="modal-card" style="width: 380px">
+        <div class="modal-head">
+          <span>扩容 / 缩容 · {{ selected?.name }}</span>
+          <button class="icon-btn" @click="scaleModal = false"><Icon name="close" :size="14" /></button>
+        </div>
+        <div class="modal-body">
+          <div class="hint-text" style="margin-bottom: 8px">设置期望的副本数（0 表示缩到零）</div>
+          <input v-model="scaleValue" class="field" type="number" min="0" />
+        </div>
+        <div class="modal-foot">
+          <button class="icon-btn" @click="scaleModal = false">取消</button>
+          <button class="icon-btn primary" @click="confirmScale">确定</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="picker" class="modal-mask" @mousedown.self="picker = null">
@@ -533,10 +722,31 @@ onBeforeUnmount(() => {
 }
 
 .type-title {
-  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 7px 6px 4px;
+  border: none;
+  background: transparent;
   color: var(--muted);
-  padding: 8px 6px 4px;
+  font-size: 10.5px;
   letter-spacing: 0.4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.type-title:hover {
+  color: var(--text);
+}
+
+.type-title-label {
+  flex: 1;
+}
+
+.type-count {
+  font-size: 9.5px;
+  opacity: 0.75;
 }
 
 .type-item {
@@ -736,6 +946,40 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.edit-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.edit-area {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.edit-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.edit-foot .hint-text {
+  flex: 1;
+  font-size: 11px;
 }
 
 .yaml {

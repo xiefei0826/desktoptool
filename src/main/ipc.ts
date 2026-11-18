@@ -2,7 +2,13 @@ import { app, clipboard, dialog, ipcMain, shell } from 'electron'
 import { existsSync, promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { K8sExecRequest, K8sListQuery, K8sPodLogRequest, K8sWatchQuery } from '../shared/types'
+import type {
+  K8sExecRequest,
+  K8sListQuery,
+  K8sObjectRef,
+  K8sPodLogRequest,
+  K8sWatchQuery
+} from '../shared/types'
 import type {
   AppConfig,
   AppSettings,
@@ -316,6 +322,24 @@ export function registerIpc(services: AppServices): void {
       clusterId: string,
       query: { apiVersion: string; kind: string; namespace: string; name: string }
     ) => services.k8s.getObjectYaml(clusterId, query)
+  )
+
+  ipcMain.handle('k8s:applyObject', (_event, clusterId: string, yamlText: string) =>
+    services.k8s.applyObject(clusterId, yamlText)
+  )
+
+  ipcMain.handle('k8s:deleteObject', (_event, clusterId: string, query: K8sObjectRef) =>
+    services.k8s.deleteObject(clusterId, query)
+  )
+
+  ipcMain.handle(
+    'k8s:scaleObject',
+    (_event, clusterId: string, query: K8sObjectRef & { replicas: number }) =>
+      services.k8s.scaleObject(clusterId, query)
+  )
+
+  ipcMain.handle('k8s:restartObject', (_event, clusterId: string, query: K8sObjectRef) =>
+    services.k8s.restartObject(clusterId, query)
   )
 
   ipcMain.handle('k8s:startWatch', (_event, clusterId: string, query: K8sWatchQuery) =>

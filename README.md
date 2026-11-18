@@ -26,12 +26,13 @@
 - 支持 **RDP / VNC over SSH 隧道**：先经 SSH 建隧道，再连接 `127.0.0.1:随机端口`
 - 没有可用客户端时降级为展示可复制的连接命令
 
-**Kubernetes 管理（P1，只读）**
+**Kubernetes 管理**
 - 集群接入：本地 kubeconfig 文件、`~/.kube/config` 一键导入、粘贴 kubeconfig、**从 WSL 发行版读取**（文件型证书自动内联成 base64）
 - 内网集群可经 **SSH 跳板隧道**访问：复用已有 SSH 会话，隧道后仍用原域名做 SNI 与证书校验
 - 多集群并存：每个 K8s 标签页独立绑定集群 / context / namespace
-- 资源浏览：通过 discovery 动态发现全部资源类型（含 CRD），按工作负载 / 网络 / 存储 / 配置 / 集群 / 自定义分类
-- 对象操作（只读）：实时 watch 刷新、名称过滤、YAML 详情与复制
+- 资源浏览：通过 discovery 动态发现全部资源类型（含 CRD），按工作负载 / 网络 / 存储 / 配置 / 集群 / 自定义分类；**资源分类默认全部折叠**，点击展开（展开状态会记住）
+- 对象查看：实时 watch 刷新、名称过滤、YAML 详情与复制
+- 对象编辑：**YAML 编辑并以服务端 apply 提交**、删除、扩缩容（Deployment/StatefulSet/ReplicaSet）、滚动重启（Deployment/StatefulSet/DaemonSet）
 - Pod 能力：多容器选择、**日志流式查看**、**Exec 交互终端**（复用 xterm，走 MessagePort 通道）
 - 集群凭据（kubeconfig 全文）用 `safeStorage` 加密存储，`config.json` 只留元数据
 
@@ -105,7 +106,7 @@ macOS 产物无法在 Windows 上构建，需要 macOS 机器或 GitHub Actions 
 
 ## 已知限制
 
-- **K8s P1 只读**：YAML 编辑、删除、扩缩容、重启、端口转发等写操作留到 P2
+- **K8s 尚未支持**：Pod 端口转发、Events 联动视图、metrics（CPU/内存）、批量 apply
 - **K8s 多窗口限制**：同一集群在多个窗口打开时共享同一份客户端缓存，切换 context 会互相影响，建议一个集群只开一个 K8s 窗口
 - **内嵌 RDP 未实现**：RDP 通过调用系统客户端完成（纯 JS 无可用协议栈，内嵌需引入 IronRDP / FreeRDP）。VNC 为真正的应用内嵌。
 - **未做 known_hosts 校验**：首次连接不比对主机指纹，生产环境建议后续补 TOFU 流程。

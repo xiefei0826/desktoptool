@@ -459,6 +459,89 @@ export class K8sService {
     }
   }
 
+  /** 服务端 apply：按 YAML 创建或更新对象 */
+  async applyObject(clusterId: string, yamlText: string): Promise<string> {
+    const runtime = await this.ensureRuntime(clusterId)
+    const document = yaml.load(yamlText) as {
+      apiVersion?: string
+      kind?: string
+      metadata?: { name?: string; namespace?: string }
+    } | null
+
+    if (!document?.apiVersion || !document.kind || !document.metadata?.name) {
+      throw new Error('YAML 必须包含 apiVersion、kind 与 metadata.name')
+    }
+
+    const query = {
+      apiVersion: document.apiVersion,
+      kind: document.kind,
+      namespace: document.metadata.namespace ?? ''
+    }
+    const target = `${this.collectionPath(runtime, query)}/${document.metadata.name}`
+
+    await this.rawRequest(
+      runtime,
+      'PATCH',
+      `${target}?fieldManager=desktop-tool&force=true`,
+      yamlText,
+      'application/apply-patch+yaml'
+    )
+
+    return `${document.kind}/${document.metadata.name} 已更新`
+  }
+
+  async deleteObject(
+    clusterId: string,
+    query: { apiVersion: string; kind: string; namespace: string; name: string }
+  ): Promise<void> {
+    const runtime = await this.ensureRuntime(clusterId)
+    const target = `${this.collectionPath(runtime, query)}/${query.name}`
+    await this.rawRequest(
+      runtime,
+      'DELETE',
+      target,
+      JSON.stringify({ apiVersion: 'v1', kind: 'DeleteOptions', propagationPolicy: 'Background' }),
+      'application/json'
+    )
+  }
+
+  /** 扩缩容（Deployment / StatefulSet / ReplicaSet 等带 scale 子资源的对象） */
+  async scaleObject(
+    clusterId: string,
+    query: { apiVersion: string; kind: string; namespace: string; name: string; replicas: number }
+  ): Promise<void> {
+    const runtime = await this.ensureRuntime(clusterId)
+    const target = `${this.collectionPath(runtime, query)}/${query.name}/scale`
+    await this.rawRequest(
+      runtime,
+      'PATCH',
+      target,
+      JSON.stringify({ spec: { replicas: query.replicas } }),
+      'application/merge-patch+json'
+    )
+  }
+
+  /** 滚动重启：改 spec.template 的 restartedAt 注解，等价 kubectl rollout restart */
+  async restartObject(
+    clusterId: string,
+    query: { apiVersion: string; kind: string; namespace: string; name: string }
+  ): Promise<void> {
+    const runtime = await this.ensureRuntime(clusterId)
+    const target = `${this.collectionPath(runtime, query)}/${query.name}`
+    const restartedAt = new Date().toISOString()
+    await this.rawRequest(
+      runtime,
+      'PATCH',
+      target,
+      JSON.stringify({
+        spec: {
+          template: { metadata: { annotations: { 'kubectl.kubernetes.io/restartedAt': restartedAt } } }
+        }
+      }),
+      'application/merge-patch+json'
+    )
+  }
+
   async getObjectYaml(
     clusterId: string,
     query: { apiVersion: string; kind: string; namespace: string; name: string }
@@ -802,44 +885,64 @@ export class K8sService {
   }
 
   private async rawGet<T>(runtime: Runtime, pathname: string): Promise<T> {
+    return await this.rawRequest<T>(runtime, 'GET', pathname)
+  }
+
+  private async rawRequest<T>(
+    runtime: Runtime,
+    method: string,
+    pathname: string,
+    body?: string,
+    contentType?: string
+  ): Promise<T> {
     const cluster = runtime.kc.getCurrentCluster()
     if (!cluster) throw new Error('kubeconfig 中没有可用的集群')
     const base = new URL(cluster.server)
+    const payload = body === undefined ? undefined : Buffer.from(body, 'utf8')
 
     const options: https.RequestOptions = {
-      method: 'GET',
+      method,
       protocol: base.protocol,
       hostname: base.hostname,
       port: base.port || '443',
       path: `${base.pathname.replace(/\/$/, '')}${pathname}`,
-      headers: { accept: 'application/json' },
-      timeout: 20000
+      headers: {
+        accept: 'application/json',
+        ...(contentType ? { 'content-type': contentType } : {}),
+        ...(payload ? { 'content-length': String(payload.length) } : {})
+      },
+      timeout: 30000
     }
 
     await runtime.kc.applyToHTTPSOptions(options)
 
     return await new Promise<T>((resolve, reject) => {
       const request = https.request(options, (response) => {
-        let body = ''
+        let responseBody = ''
         response.setEncoding('utf8')
         response.on('data', (chunk: string) => {
-          body += chunk
+          responseBody += chunk
         })
         response.on('end', () => {
           const status = response.statusCode ?? 0
           if (status >= 400) {
-            reject(new Error(this.describeStatus(status, body)))
+            reject(new Error(this.describeStatus(status, responseBody)))
+            return
+          }
+          if (!responseBody) {
+            resolve(undefined as T)
             return
           }
           try {
-            resolve(JSON.parse(body) as T)
+            resolve(JSON.parse(responseBody) as T)
           } catch {
-            reject(new Error('Kubernetes API 返回了非 JSON 响应'))
+            resolve(undefined as T)
           }
         })
       })
       request.on('timeout', () => request.destroy(new Error('请求超时')))
       request.on('error', (error) => reject(new Error(`请求失败：${error.message}`)))
+      if (payload) request.write(payload)
       request.end()
     })
   }

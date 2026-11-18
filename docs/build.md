@@ -122,6 +122,20 @@ node_modules/electron/dist/electron.exe . --smoke-k8s
 
 自检会临时导入 `~/.kube/config`，结束后删除本地记录与加密凭据，**不会修改集群内任何资源**（Exec 只执行 `echo`）。
 
+### 4.5 K8s 写操作自检（会临时创建一个 ConfigMap）
+
+```bash
+node_modules/electron/dist/electron.exe . --smoke-k8s-write
+```
+
+预期输出：
+
+```
+[smoke-k8s-write] PASS ["k8s-apply-create ok (...)","k8s-apply-update ok (true)","k8s-delete ok (true)"]
+```
+
+只在 `default` 命名空间创建 `desktop-tool-smoke` 这个 ConfigMap，验证完立即删除。
+
 ## 5. 打包
 
 打包前先 `npm run build`，或直接用带构建的组合命令。

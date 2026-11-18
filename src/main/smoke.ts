@@ -3,6 +3,7 @@ import http from 'node:http'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import yaml from 'js-yaml'
 import { defaultRdpOptions } from '../shared/defaults'
 import type { AppServices } from './services'
 
@@ -180,6 +181,65 @@ export async function runK8sSmoke(
     await new Promise((resolve) => setTimeout(resolve, 2500))
     services.k8s.stopWatch(`smoke:${cluster.id}`)
     logs.push('k8s-watch ok (subscribed)')
+  } finally {
+    await services.k8s.removeCluster(cluster.id).catch(() => undefined)
+  }
+
+  return logs
+}
+
+/**
+ * K8s 写操作自检：创建 ConfigMap → 再次 apply 更新 → 读取校验 → 删除 → 确认已消失
+ * 只在 default 命名空间里用一个固定名字的 ConfigMap 做验证，结束后清理。
+ */
+export async function runK8sWriteSmoke(services: AppServices): Promise<string[]> {
+  const logs: string[] = []
+  const kubeconfig = path.join(os.homedir(), '.kube', 'config')
+  const cluster = await services.k8s.importFromFile(kubeconfig, '__smoke_k8s_write__')
+
+  const yamlOf = (stage: string): string =>
+    [
+      'apiVersion: v1',
+      'kind: ConfigMap',
+      'metadata:',
+      '  name: desktop-tool-smoke',
+      '  namespace: default',
+      'data:',
+      `  stage: "${stage}"`,
+      ''
+    ].join('\n')
+
+  try {
+    await services.k8s.connect(cluster.id)
+
+    const created = await services.k8s.applyObject(cluster.id, yamlOf('1'))
+    logs.push(`k8s-apply-create ok (${created})`)
+
+    await services.k8s.applyObject(cluster.id, yamlOf('2'))
+    const current = await services.k8s.getObjectYaml(cluster.id, {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      namespace: 'default',
+      name: 'desktop-tool-smoke'
+    })
+    const parsed = yaml.load(current) as { data?: { stage?: string } } | null
+    logs.push(`k8s-apply-update ok (${parsed?.data?.stage === '2'})`)
+
+    await services.k8s.deleteObject(cluster.id, {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      namespace: 'default',
+      name: 'desktop-tool-smoke'
+    })
+
+    const remaining = await services.k8s.listObjects(cluster.id, {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      namespace: 'default'
+    })
+    logs.push(
+      `k8s-delete ok (${!remaining.items.some((item) => item.name === 'desktop-tool-smoke')})`
+    )
   } finally {
     await services.k8s.removeCluster(cluster.id).catch(() => undefined)
   }

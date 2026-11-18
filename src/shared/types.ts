@@ -123,6 +123,13 @@ export interface K8sObjectSummary {
   extra: string
 }
 
+export interface K8sObjectRef {
+  apiVersion: string
+  kind: string
+  namespace: string
+  name: string
+}
+
 export interface K8sListQuery {
   apiVersion: string
   kind: string

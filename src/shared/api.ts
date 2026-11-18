@@ -13,6 +13,7 @@ import type {
   K8sExecRequest,
   K8sListQuery,
   K8sListResult,
+  K8sObjectRef,
   K8sPodLogRequest,
   K8sResourceType,
   K8sWatchEvent,
@@ -146,10 +147,11 @@ export interface Api {
     listNamespaces(clusterId: string): Promise<string[]>
     resourceTypes(clusterId: string): Promise<K8sResourceType[]>
     listObjects(clusterId: string, query: K8sListQuery): Promise<K8sListResult>
-    getObjectYaml(
-      clusterId: string,
-      query: { apiVersion: string; kind: string; namespace: string; name: string }
-    ): Promise<string>
+    getObjectYaml(clusterId: string, query: K8sObjectRef): Promise<string>
+    applyObject(clusterId: string, yaml: string): Promise<string>
+    deleteObject(clusterId: string, query: K8sObjectRef): Promise<void>
+    scaleObject(clusterId: string, query: K8sObjectRef & { replicas: number }): Promise<void>
+    restartObject(clusterId: string, query: K8sObjectRef): Promise<void>
     startWatch(clusterId: string, query: K8sWatchQuery): Promise<void>
     stopWatch(watchId: string): Promise<void>
     openLog(request: K8sPodLogRequest): Promise<BridgeEndpoint>
